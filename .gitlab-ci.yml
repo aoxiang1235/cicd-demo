@@ -6,25 +6,25 @@
 
 # ------------------------------------------
 # stages：定义流水线阶段
-# 阶段按顺序执行：build → test → push
+# 阶段按顺序执行：build -> test -> push
 # 同一阶段的多个 Job 并行执行，不同阶段按顺序执行
 # ------------------------------------------
 stages:
-  - build                    # 构建阶段：构建 Docker 镜像
-  - test                     # 测试阶段：启动容器，验证网页内容
-  - push                     # 推送阶段：推送镜像到阿里云 ACR
+  - build  # 构建阶段：构建 Docker 镜像
+  - test   # 测试阶段：启动容器，验证网页内容
+  - push   # 推送阶段：推送镜像到阿里云 ACR
 
 # ============================================
 # Job 1：构建 Docker 镜像
 # ============================================
 build-image:
-  stage: build               # 此 Job 属于 build 阶段
+  stage: build  # 此 Job 属于 build 阶段
   tags:
-    - local                  # 指定使用 tag=local 的 Runner（我们部署的 local-runner）
-  image: docker:24           # CI 作业在 docker:24 容器中运行
-  script:                    # 按顺序执行的命令列表
-    - docker build -t cicd-demo:$CI_COMMIT_SHORT_SHA . # 构建镜像，$CI_COMMIT_SHORT_SHA 是 GitLab 内置变量
-    - docker images           # 列出镜像，确认构建成功
+    - local  # 指定使用 tag=local 的 Runner（我们部署的 local-runner）
+  image: docker:24  # CI 作业在 docker:24 容器中运行
+  script:
+    - docker build -t cicd-demo:$CI_COMMIT_SHORT_SHA .
+    - docker images
     - echo "镜像构建完成: cicd-demo:$CI_COMMIT_SHORT_SHA"
 
 # ============================================
@@ -32,22 +32,16 @@ build-image:
 # build 阶段通过后自动执行
 # ============================================
 test-image:
-  stage: test                # 此 Job 属于 test 阶段
+  stage: test  # 此 Job 属于 test 阶段
   tags:
     - local
   image: docker:24
   script:
-    # 启动容器（-d 后台运行，--name 指定容器名方便后续引用）
     - docker run -d --name test-app cicd-demo:$CI_COMMIT_SHORT_SHA
-    # 等待 Nginx 启动（2 秒）
     - sleep 2
-    # 在容器内访问 localhost，获取网页内容并显示
     - docker exec test-app wget -qO- http://localhost
-    # 验证页面内容是否包含 "Hello CI/CD"
-    # grep -q 静默模式，找到返回 0（成功），找不到返回 1（失败，Job 失败）
     - docker exec test-app wget -qO- http://localhost | grep -q "Hello CI/CD"
     - echo "页面内容验证通过"
-    # 清理测试容器
     - docker stop test-app
     - docker rm test-app
 
@@ -56,15 +50,12 @@ test-image:
 # test 阶段通过后自动执行
 # ============================================
 push-to-acr:
-  stage: push                # 此 Job 属于 push 阶段
+  stage: push  # 此 Job 属于 push 阶段
   tags:
     - local
   image: docker:24
   script:
-    # 登录阿里云 ACR（用户名、密码、地址从 GitLab CI/CD Variables 读取）
     - docker login -u "$ACR_USERNAME" -p "$ACR_PASSWORD" "$ACR_REGISTRY"
-    # 给镜像打 ACR 完整标签（registry地址/命名空间/镜像名:版本号）
     - docker tag cicd-demo:$CI_COMMIT_SHORT_SHA "$ACR_IMAGE:$CI_COMMIT_SHORT_SHA"
-    # 推送镜像到 ACR
     - docker push "$ACR_IMAGE:$CI_COMMIT_SHORT_SHA"
     - echo "镜像已推送到 ACR: $ACR_IMAGE:$CI_COMMIT_SHORT_SHA"
