@@ -1,67 +1,72 @@
 # ============================================
 # GitLab CI/CD 流水线配置文件
-# 文件名必须是 .gitlab-ci.yml（GitLab 硬编码识别此文件名）
-# 提交到仓库根目录后，GitLab 会自动检测并触发流水线
+# 文件名必须是 .gitlab-ci.yml（GitLab 固定识别此文件名）
+# 提交到仓库根目录后，GitLab 自动检测并触发流水线
 # ============================================
 
 # ------------------------------------------
-# stages：定义流水线的阶段（stage）
+# stages：定义流水线阶段
 # 阶段按顺序执行：build → test → push
-# 同一阶段的多个 job 并行执行，不同阶段按顺序执行
+# 同一阶段的多个 Job 并行执行，不同阶段按顺序执行
 # ------------------------------------------
 stages:
   - build                    # 构建阶段：构建 Docker 镜像
-  - test                     # 测试阶段：验证镜像是否正常
-  - push                     # 推送阶段：推送镜像到 ACR 镜像仓库
+  - test                     # 测试阶段：启动容器，验证网页内容
+  - push                     # 推送阶段：推送镜像到阿里云 ACR
 
 # ============================================
 # Job 1：构建 Docker 镜像
 # ============================================
 build-image:
-  stage: build               # 此 job 属于 build 阶段
+  stage: build               # 此 Job 属于 build 阶段
   tags:
     - local                  # 指定使用 tag=local 的 Runner（我们部署的 local-runner）
-  image: docker:24           # CI 作业运行在 docker:24 容器中（容器内执行 Docker 命令）
+  image: docker:24           # CI 作业在 docker:24 容器中运行
   script:                    # 按顺序执行的命令列表
     - docker build -t cicd-demo:$CI_COMMIT_SHORT_SHA .
-                              # 构建镜像，用 GitLab 内置变量 $CI_COMMIT_SHORT_SHA
-                              # （当前提交的短 commit ID）作为镜像版本号
-    - docker images           # 列出构建好的镜像，确认构建成功
+                              # 构建镜像，$CI_COMMIT_SHORT_SHA 是 GitLab 内置变量
+                              # 取当前提交的短 commit ID 作为镜像版本号
+    - docker images           # 列出镜像，确认构建成功
     - echo "镜像构建完成: cicd-demo:$CI_COMMIT_SHORT_SHA"
 
 # ============================================
 # Job 2：测试 Docker 镜像
-# 在 build 阶段完成后自动执行（因为属于 test 阶段）
+# build 阶段通过后自动执行
 # ============================================
 test-image:
-  stage: test                # 此 job 属于 test 阶段
+  stage: test                # 此 Job 属于 test 阶段
   tags:
     - local
   image: docker:24
   script:
-    - docker run --rm cicd-demo:$CI_COMMIT_SHORT_SHA nginx -t
-                              # 启动一个临时容器执行 nginx -t
-                              # --rm 表示容器退出后自动删除
-                              # nginx -t 检查 Nginx 配置是否正确
-    - echo "Nginx 配置测试通过"
+    # 启动容器（-d 后台运行，--name 指定容器名方便后续引用）
+    - docker run -d --name test-app cicd-demo:$CI_COMMIT_SHORT_SHA
+    # 等待 Nginx 启动（2 秒）
+    - sleep 2
+    # 在容器内访问 localhost，获取网页内容并显示
+    - docker exec test-app wget -qO- http://localhost
+    # 验证页面内容是否包含 "Hello CI/CD"
+    # grep -q 静默模式，找到返回 0（成功），找不到返回 1（失败，Job 失败）
+    - docker exec test-app wget -qO- http://localhost | grep -q "Hello CI/CD"
+    - echo "页面内容验证通过"
+    # 清理测试容器
+    - docker stop test-app
+    - docker rm test-app
 
 # ============================================
 # Job 3：推送镜像到阿里云 ACR
-# 在 test 阶段完成后自动执行（因为属于 push 阶段）
+# test 阶段通过后自动执行
 # ============================================
 push-to-acr:
-  stage: push                # 此 job 属于 push 阶段
+  stage: push                # 此 Job 属于 push 阶段
   tags:
     - local
   image: docker:24
   script:
+    # 登录阿里云 ACR（用户名、密码、地址从 GitLab CI/CD Variables 读取）
     - docker login -u "$ACR_USERNAME" -p "$ACR_PASSWORD" "$ACR_REGISTRY"
-                              # 登录阿里云 ACR 镜像仓库
-                              # 用户名、密码、地址从 GitLab CI/CD Variables 读取
-                              # 变量在 Settings → CI/CD → Variables 中配置
+    # 给镜像打 ACR 完整标签（registry地址/命名空间/镜像名:版本号）
     - docker tag cicd-demo:$CI_COMMIT_SHORT_SHA "$ACR_IMAGE:$CI_COMMIT_SHORT_SHA"
-                              # 给镜像打 ACR 仓库的完整标签
-                              # 格式：registry地址/命名空间/镜像名:版本号
+    # 推送镜像到 ACR
     - docker push "$ACR_IMAGE:$CI_COMMIT_SHORT_SHA"
-                              # 推送镜像到 ACR
     - echo "镜像已推送到 ACR: $ACR_IMAGE:$CI_COMMIT_SHORT_SHA"
