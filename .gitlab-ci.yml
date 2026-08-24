@@ -24,8 +24,8 @@ build-image:
   image: docker:24           # CI 作业在 docker:24 容器中运行
   script:                    # 按顺序执行的命令列表
     - docker build -t cicd-demo:$CI_COMMIT_SHORT_SHA .
-                              # 构建镜像，$CI_COMMIT_SHORT_SHA 是 GitLab 内置变量
-                              # 取当前提交的短 commit ID 作为镜像版本号
+    # 构建镜像，$CI_COMMIT_SHORT_SHA 是 GitLab 内置变量
+    # 取当前提交的短 commit ID 作为镜像版本号
     - docker images           # 列出镜像，确认构建成功
     - echo "镜像构建完成: cicd-demo:$CI_COMMIT_SHORT_SHA"
 
