@@ -1,9 +1,13 @@
 name: CI Pipeline
 
 on:
-  push:
-    branches: [ main ]
   workflow_dispatch:
+    inputs:
+      version:
+        description: '选择要构建的版本（分支/Tag名）'
+        required: true
+        default: 'main'
+        type: string
 
 env:
   IMAGE_NAME: registry.cn-hangzhou.aliyuncs.com/shaoyaoyu/cicd-demo
@@ -12,8 +16,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: 拉取代码
+      - name: 拉取代码（版本：${{ inputs.version }}）
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.version }}
 
       - name: 登录阿里云 ACR
         env:
@@ -21,15 +27,12 @@ jobs:
           USERNAME: ${{ secrets.ACR_USERNAME }}
           PASSWORD: ${{ secrets.ACR_PASSWORD }}
         run: |
-          echo "Registry长度: ${#REGISTRY}"
-          echo "Username长度: ${#USERNAME}"
-          echo "Password长度: ${#PASSWORD}"
           echo "$PASSWORD" | docker login "$REGISTRY" -u "$USERNAME" --password-stdin
 
       - name: 构建并推送镜像
         run: |
-          docker build -t ${{ env.IMAGE_NAME }}:latest .
-          docker push ${{ env.IMAGE_NAME }}:latest
+          docker build -t ${{ env.IMAGE_NAME }}:${{ inputs.version }} .
+          docker push ${{ env.IMAGE_NAME }}:${{ inputs.version }}
 
       - name: 查看镜像
         run: docker images
